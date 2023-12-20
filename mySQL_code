@@ -1,0 +1,110 @@
+SET @@global.net_read_timeout=360;
+-- Cleaning Data in SQL Queries
+SELECT *
+FROM clean_dataset.`nashville housing`;
+
+-- Standardize Date Format
+SELECT SaleDate, str_to_date(SaleDate, "%M %d,%Y") as DateSalenew
+FROM clean_dataset.`nashville housing`;
+
+ALTER TABLE clean_dataset.`nashville housing`
+ADD convertedDateSale11 DATE;
+
+UPDATE clean_dataset.`nashville housing`
+SET convertedDateSale = str_to_date(SaleDate, "%M %d,%Y") ;
+
+-- Populate Property Address data
+
+SELECT 
+a.UniqueID, b.UniqueID, a.ParcelID, a.PropertyAddress, b.ParcelID, b.PropertyAddress,
+	CASE WHEN a.PropertyAddress = '' THEN b.PropertyAddress
+						ELSE a.PropertyAddress
+                        END
+FROM clean_dataset.`nashville housing` a
+JOIN clean_dataset.`nashville housing` b
+ON a.ParcelID = b.ParcelID  AND a.UniqueID <> b.UniqueID
+WHERE a.PropertyAddress ='';
+
+UPDATE clean_dataset.`nashville housing` a
+JOIN clean_dataset.`nashville housing` b 
+ON a.ParcelID = b.ParcelID  AND a.UniqueID <> b.UniqueID
+SET a.PropertyAddress = b.PropertyAddress
+WHERE a.PropertyAddress = '';
+
+
+-- Breaking out Address into Individual Columns (Address, City, State)
+
+SELECT OwnerAddress ,
+	substring_index(OwnerAddress,',',1) as OwnerAddress_street ,
+    substring_index(substring_index(OwnerAddress,',',2),',',-1) as OwnerAddress_city, 
+    substring_index(OwnerAddress,',',-1) as OwnerAddress_state
+FROM clean_dataset.`nashville housing`;
+
+ALTER TABLE clean_dataset.`nashville housing`
+ADD OwnerAddress_street nvarchar(255);
+
+UPDATE clean_dataset.`nashville housing`
+SET OwnerAddress_street = substring_index(OwnerAddress,',',1);
+
+ALTER TABLE clean_dataset.`nashville housing`
+ADD OwnerAddress_city nvarchar(255);
+
+UPDATE clean_dataset.`nashville housing`
+SET OwnerAddress_city = substring_index(substring_index(OwnerAddress,',',2),',',-1) ;
+
+ALTER TABLE clean_dataset.`nashville housing`
+ADD OwnerAddress_state nvarchar(255);
+
+UPDATE clean_dataset.`nashville housing`
+SET OwnerAddress_state = substring_index(OwnerAddress,',',-1);
+
+
+-- Rename column 
+
+ALTER TABLE clean_dataset.`nashville housing`
+RENAME COLUMN convertedDateSale1 TO convertedDateSale;
+
+
+-- Change Y and N to Yes and No in "Sold as Vacant" field
+
+SELECT  SoldAsVacant, count(SoldAsVacant) AS count
+FROM clean_dataset.`nashville housing`
+Group by SoldAsVacant
+ORDER BY count desc;
+
+UPDATE clean_dataset.`nashville housing`
+SET SoldAsVacant = CASE WHEN SoldAsVacant = 'N' THEN 'No'
+						WHEN SoldAsVacant = 'Y' THEN 'Yes'
+            ELSE SoldAsVacant
+			END ;
+
+-- Remove Duplicates
+-- SET @row_number = 0;
+SELECT 
+ a.UniqueID, b.UniqueID ,a.ParcelID, b.ParcelID, a.SaleDate, b.SaleDate, a.LegalReference, b.LegalReference, a.OwnerName, b.OwnerName
+FROM clean_dataset.`nashville housing` a
+JOIN clean_dataset.`nashville housing` b
+ON a.SaleDate = b.SaleDate AND a.ParcelID = b.ParcelID AND a.UniqueID <> b.UniqueID;
+
+SET @num_row = 0;
+SELECT @num_row:=@num_row+1 as numrow, ParcelID, SaleDate, COUNT(SaleDate) AS COUNT_SALEDATE
+FROM clean_dataset.`nashville housing`
+GROUP BY ParcelID, SaleDate ;
+-- HAVING COUNT_SALEDATE > 1;
+
+DELETE t1 from clean_dataset.`nashville housing` t1
+JOIN clean_dataset.`nashville housing` t2
+WHERE t1.UniqueID < t2.UniqueID AND t1.ParcelID = t2.ParcelID AND t1.SaleDate = t2.SaleDate;
+
+-- Delete Unused Columns
+
+ALTER TABLE clean_dataset.`nashville housing`
+DROP COLUMN NEW_PropertyAddress,
+DROP COLUMN OwnerAddress_city,
+DROP COLUMN OwnerAddress_state,
+DROP COLUMN convertedDateSale;
+
+
+
+
+
